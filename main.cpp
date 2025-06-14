@@ -1,37 +1,70 @@
 #include "include/raylib.h"
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
+#include <cmath>
+#include <complex>
 #include <cstdio>
-#include <cstring>
+#include <cstdlib>
+using namespace std;
 
+float pi = atan2f(1, 1) * 4;
+float max_amp;
 #define ARR_len(xs) sizeof(xs) / sizeof(xs[0])
 
-typedef struct {
+#define N 256
+
+float in[N];
+complex<float> out[N];
+
+struct Frames {
   float left;
   float right;
-} Frames;
+};
 
-Frames glo_frames[4800 * 2] = {0};
-size_t glo_frames_c = 0;
+float amp(complex<float> z) { return abs(z); }
 
-size_t cap = ARR_len(glo_frames);
+void fft(float in[], size_t stride, complex<float> out[], size_t n) {
+  if (n == 1) {
+    out[0] = in[0];
+    return;
+  }
+  fft(in, stride * 2, out, n / 2);
+  fft(in + stride, stride * 2, out + n / 2, n / 2);
 
-void callback(void *bufferdata, unsigned int frames) {
-  if (frames <= cap - glo_frames_c) {
-    memcpy(glo_frames + glo_frames_c, bufferdata, sizeof(Frames) * frames);
-    glo_frames_c += frames;
-  } else if (frames <= cap) {
-    memmove(glo_frames, glo_frames + frames, sizeof(Frames) * (cap - frames));
-    memcpy(glo_frames + (cap - frames), bufferdata, sizeof(Frames) * frames);
-  } else {
-    memcpy(glo_frames, bufferdata, sizeof(Frames) * cap);
-    glo_frames_c = cap;
+  for (size_t k = 0; k < n / 2; ++k) {
+    float t = (float)k / n;
+    complex<float> w = polar(1.0f, -2.0f * pi * t);
+    complex<float> v = w * out[k + n / 2];
+    complex<float> e = out[k];
+    out[k] = e + v;
+    out[k + n / 2] = e - v;
   }
 }
+
+void callback(void *bufferdata, unsigned int frames) {
+  if (frames < N)
+    return;
+
+  Frames *fs = (Frames *)bufferdata;
+
+  for (size_t i = 0; i < N; ++i) {
+    in[i] = fs[i].left;
+  }
+
+  fft(in, 1, out, N);
+
+  max_amp = 0.0f;
+
+  for (size_t i = 0; i < N; ++i) {
+    float a = amp(out[i]);
+    if (max_amp < a)
+      max_amp = a;
+  }
+}
+
 int main() {
   InitWindow(800, 600, "music");
   SetTargetFPS(60);
+
+  SetTraceLogLevel(LOG_ALL);
 
   InitAudioDevice();
   Music music = LoadMusicStream("song.mp3");
@@ -46,17 +79,25 @@ int main() {
     int h = GetRenderHeight();
 
     BeginDrawing();
-    ClearBackground(BLACK);
-    float cell_w = (float)w / glo_frames_c;
-    for (size_t i = 0; i < glo_frames_c; i++) {
-      float samps = glo_frames[i].left;
-      if (samps > 0) {
-        DrawRectangle(i * cell_w, h / 2 - h / 2 * samps, 1, h / 2 * samps, RED);
-      } else {
-        DrawRectangle(i * cell_w, h / 2, 1, h / 2 * samps, RED);
-      }
-    }
 
+    DrawText("Playing music...", 10, 10, 20, GREEN);
+
+    ClearBackground(BLACK);
+    float cell_w = (float)w / N;
+
+    for (size_t i = 0; i < N; ++i) {
+      float t = amp(out[i]);
+      DrawRectangle(i * cell_w, h / 2 - h / 2 * t, cell_w, h / 2 * t, RED);
+    }
+    // for (size_t i = 0; i < glo_frames_c; i++) {
+    //   float samps = glo_frames[i].left;
+    //   if (samps > 0) {
+    //     DrawRectangle(i * cell_w, h / 2 - h / 2 * samps, 1, h / 2 * samps,
+    //     RED);
+    //   } else {
+    //     DrawRectangle(i * cell_w, h / 2, 1, h / 2 * samps, RED);
+    //   }
+    // }
     EndDrawing();
   }
   return 0;
