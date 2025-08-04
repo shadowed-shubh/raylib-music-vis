@@ -76,7 +76,7 @@ int main() {
     UpdateMusicStream(music);
 
     int w = GetRenderWidth();
-    int h = GetRenderHeight();
+    float h = GetRenderHeight();
 
     BeginDrawing();
 
